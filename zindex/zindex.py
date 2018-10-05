@@ -106,8 +106,9 @@ def zindex_compare(a,b,tx0, ty0, tx1, ty1):
         
         return less_than(xa,ya,xb,yb)
         #return less_than(child_a[:2], child_b[:2])
-        
-def lower_bound(sequence, value, compare=None):
+ 
+@numba.jit(nopython=True)
+def lower_bound(sequence, value, tx0, ty0, tx1, ty1):
     """Find the index of the first element in sequence >= value"""
     elements = len(sequence)
     offset = 0
@@ -117,7 +118,8 @@ def lower_bound(sequence, value, compare=None):
     while elements > 0:
         middle = elements // 2
         #print("middle:", middle)
-        if compare(value, sequence[offset + middle]) > 0:
+        ix = offset + middle
+        if zindex_compare(value, sequence[ix], tx0, ty0, tx1, ty1) > 0:
             offset = offset + middle + 1
             elements = elements - (middle + 1)
         else:
@@ -125,7 +127,7 @@ def lower_bound(sequence, value, compare=None):
             elements = middle
     return found
 
-def upper_bound(sequence, value, compare):
+def upper_bound(sequence, value, tx0, ty0, tx1, ty1):
     """Find the index of the first element in sequence > value"""
     elements = len(sequence)
     offset = 0
@@ -134,7 +136,7 @@ def upper_bound(sequence, value, compare):
  
     while elements > 0:
         middle = elements // 2
-        if compare(value, sequence[offset + middle]) < 0:
+        if zindex_compare(value, sequence[offset + middle], tx0, ty0, tx1, ty1) < 0:
             elements = middle
         else:
             offset = offset + middle + 1
@@ -142,11 +144,12 @@ def upper_bound(sequence, value, compare):
             elements = elements - (middle + 1)
     return found
 
-def all_point_boundaries(points_list, tile, bounding_tile):
-    cmp = lambda a,b: zindex_compare(a,b, *bounding_tile)
-    
-    left_index = lower_bound(points_list, [tile[0], tile[1]], cmp)
-    right_index = lower_bound(points_list, [tile[2] - 0.000001, tile[3] - 0.000001], cmp)
+def all_point_boundaries(points_list, tile, bounding_tile):   
+    # print("points_list", points_list)
+    left_index = lower_bound(points_list, 
+        np.array([tile[0], tile[1]]), *bounding_tile)
+    right_index = lower_bound(points_list, 
+        np.array([tile[2] - 0.000001, tile[3] - 0.000001]), *bounding_tile)
     #print("right_index", right_index)
     
     return left_index, right_index
@@ -232,27 +235,25 @@ def get_points(points_list, rect, tile, bounding_tile):
         tile = tiles_to_check.pop()
         # print("tile:", tile)
         
-        left_index, right_index = all_point_boundaries(points_list, tile, bounding_tile)
         tiles_checked += 1
-    
-        #if len(points_in_tile) == 0:
-        #    return []
-    
-        #print("tile:", tile)
-        # points_in_tile
-        if left_index == right_index:
-            continue
-    
-        if not some_in(tile, rect):
-            # no intersection
-            continue
-            
-        if all_in(tile, rect):
-            #print("all points", tile)
-            points += points_list[left_index:right_index]
-            continue
+
     
         for child in tile_children(*tile).reshape((4,-1)):
+            if not some_in(child, rect):
+                # no intersection
+                continue
+
+            left_index, right_index = all_point_boundaries(
+                points_list, child, bounding_tile)
+
+            if left_index == right_index:
+                continue
+
+            if all_in(child, rect):
+                #print("all points", tile)
+                points += list(points_list[left_index:right_index])
+                continue
+
             tiles_to_check += [child]
             #points += get_points(points_list, rect, child, bounding_tile) 
 
@@ -263,3 +264,138 @@ def get_points(points_list, rect, tile, bounding_tile):
     
     # print("tiles_checked:", tiles_checked)
     return points
+
+
+@numba.jit(nopython=True)
+def ix(i,j):
+    return i
+
+
+@numba.jit( nopython=True)
+def quicksort_zindex(a, s, e, x0, y0, x1, y1):
+    '''
+    # From here: https://github.com/lprakash/Sorting-Algorithms/blob/master/sorts.ipynb
+    '''
+    #print(a, s, e)
+    #print(a.__repr__)
+    # stack = []    
+
+    if (e-s)==0:
+        return 
+
+    
+    pivot_a = a[2*(e-1)]
+    pivot_b = a[2*(e-1) + 1]
+
+    p1 = s
+    p2 = e - 1
+
+    while (p1 != p2):
+        #p1 += 2
+                
+        #print("2*p1", 2*p1+1)
+        comp = zindex_compare([a[2*p1], a[2*p1+1] ], [pivot_a, pivot_b], x0, y0, x1, y1)
+        #print("y", 2*(p2-1)+1)
+        if comp > 0:
+            #x = ix(p2, 0)
+            #a[ix(p2, 0)] = a[ix(p1,0)]
+            
+            a[2*p2 + 0] = a[2*p1+0]
+            a[2*p2 + 1] = a[2*p1+1]
+
+            a[2*p1+0] = a[2*(p2-1)+0]
+            a[2*p1+1] = a[2*(p2-1)+1]
+
+            a[2*(p2-1)+0] = pivot_a
+            a[2*(p2-1)+1] = pivot_b
+            
+            p2 = p2 -1
+        else: 
+            p1+=1
+        
+
+    quicksort_zindex(a, s, p2, x0, y0, x1, y1)
+    quicksort_zindex(a, p2+1, e, x0, y0, x1, y1)
+
+    return a
+
+@numba.jit(nopython=True)
+def quicksort_zindex1(a, s, e, x0, y0, x1, y1):
+    '''
+    # From here: https://github.com/lprakash/Sorting-Algorithms/blob/master/sorts.ipynb
+    '''
+    #print(a, s, e)
+    #print(a.__repr__)
+    # stack = []
+
+    if (e-s)==0:
+        return 
+
+    pivot_a = a[e-1,0]
+    pivot_b = a[e-1,1]
+
+    p1 = s
+    p2 = e - 1
+    while (p1 != p2):
+        comp = zindex_compare(a[p1], [pivot_a, pivot_b], x0, y0, x1, y1)
+
+        if comp > 0:
+            a[p2,0] = a[p1,0]
+            a[p2,1] = a[p1,1]
+            a[p1,0] = a[p2-1,0]
+            a[p1,1] = a[p2-1,1]
+            a[p2-1,0] = pivot_a
+            a[p2-1,1] = pivot_b
+            p2 = p2 -1
+        else: 
+            p1+=1
+
+    quicksort_zindex(a, s, p2, x0, y0, x1, y1)
+    quicksort_zindex(a, p2+1, e, x0, y0, x1, y1)
+
+    return a
+
+def quicksort(a, s, e):
+    #print(a, s, e)
+    #print(a.__repr__)
+    if (e-s)==0:
+        return 
+    pivot = a[e-1]
+    print("pivot:", pivot)
+    p1 = s
+    p2 = e - 1
+    while (p1 != p2):
+        if (a[p1] > pivot):
+            print('setting {} to {} and {} to {} and {} to pivot ({})'.format(p2, p1, p1, p2-1, p2-1, e-1, pivot) )
+            print("pre:", a)
+            a[p2] = a[p1]
+            print("pivot:", pivot)
+            a[p1] = a[p2-1]
+            print("pivot:", pivot)
+            a[p2-1] = pivot
+            print("post:", a)
+            print("--------------")
+            p2 = p2 -1
+        else: 
+            p1+=1
+    quicksort(a, s, p2)
+    quicksort(a, p2+1, e)
+
+def zindex_sort(points, bounds):
+    '''
+    Sort a 2d array according to a z-index based ordering
+
+    Parameters
+    ----------
+    array: np.array (shape: (-1,2))
+        The array of points to sort
+    bounds: [float, float, float, float]
+        An array of the bounds of the area to sort
+    '''
+    return quicksort_zindex(points.reshape((-1,)), 
+                                   0, len(points), 
+                                   *bounds).reshape((-1,2))
+
+
+
+
