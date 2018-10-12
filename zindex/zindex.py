@@ -304,13 +304,15 @@ def tile_children(a,b,c,d):
            a + tile_width // 2, b + tile_height // 2, c, d]).astype(np.uint64)
 
 
+@nb.njit()
 def all_point_boundaries(points_list, int_bounds):
+    # print("searchsorted")
     #print("int_bounds:", int_bounds)
-
-    #print("int_bounds:", int_bounds[:,0].dtype)
+    #print("int_bounds:", int_bounds[:,0])
     interleaved_bounds = interleave(int_bounds[:,0], int_bounds[:,1])
     #print("int bounds", int_bounds)
     #print("interleaved_bounds:", interleaved_bounds)
+    #print("points list", points_list[-10:])
 
     left_index = np.searchsorted(points_list, interleaved_bounds[0])
     right_index = np.searchsorted(points_list, interleaved_bounds[1])
@@ -353,26 +355,28 @@ def get_points(points_list, rect, bounds, zoom=32):
 
     indeces = []
     m1 = np.array([0,0,-1,-1])
+    not_visited = 0
+
     
     while len(tiles_to_check) > 0:
         tile = tiles_to_check.pop()
         # print("tile:", tile)
         
-        tiles_checked += 1
-    
         for child in tile_children(*tile).reshape((4,-1)):
+            tiles_checked += 1
             if not some_in(child, rect_int_bounds):
-                #print("continuing", child)
+                # print("continuing", child)
                 # no intersection
                 continue
 
-            #print("child:", child)
+            #print("child:", child, (child+m1).astype(np.uint64).reshape((-1,2)))
             left_index, right_index = all_point_boundaries(
                 points_list, (child+m1).astype(np.uint64).reshape((-1,2)))
 
             #print("left_index:", left_index, "right_index:", right_index)
 
             if left_index == right_index:
+                not_visited += 1
                 #print("same index")
                 continue
 
@@ -396,7 +400,7 @@ def get_points(points_list, rect, bounds, zoom=32):
             print("len", len(tiles_to_check), base64.b64encode(tile), base64.b64encode(rect), tile[0].hex()) #, rect)
         '''
     
-    # print("tiles_checked:", tiles_checked)
+    print("tiles_checked:", tiles_checked, not_visited)
     return indeces
 
 
