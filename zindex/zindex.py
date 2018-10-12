@@ -31,6 +31,10 @@ def interleave(x,y,out):
         out[i] = __part1by1(x[i]) | (__part1by1(y[i]) << 1)
 
 @nb.njit()
+def interleave1(x):
+    return nb.uint64(__part1by1(np.uint64(x[0])) | (__part1by1(nb.uint64(x[1])) << 1))
+
+@nb.njit()
 def less_than(xa, ya, xb, yb):
     '''
     Assuming a and b are on adjacent vertices of
@@ -235,7 +239,7 @@ def all_points(points_list, tile, bounding_tile):
     return points_list[left_index:right_index]
 
 
-@nb.jit(nopython=True)
+@nb.njit()
 def all_in(tile, rect):
     '''
     Is this tile completely enclosed in the rectangle:
@@ -264,7 +268,7 @@ def all_in(tile, rect):
     #print("all_in:", ret, tile, rect)
     return ret
 
-@nb.jit(nopython=True)
+@nb.njit()
 def some_in(tile, rect):
     '''
     Is part of this tile within the rectangle?
@@ -286,7 +290,7 @@ def some_in(tile, rect):
 
 import base64
 
-@nb.jit(nopython=True)
+@nb.njit()
 def tile_children(a,b,c,d):
     '''
     Split a tile into its four children
@@ -304,25 +308,28 @@ def tile_children(a,b,c,d):
            a + tile_width // 2, b + tile_height // 2, c, d]).astype(np.uint64)
 
 
-@nb.njit()
+@nb.njit
 def all_point_boundaries(points_list, int_bounds):
     # print("searchsorted")
     #print("int_bounds:", int_bounds)
     #print("int_bounds:", int_bounds[:,0])
-    interleaved_bounds = interleave(int_bounds[:,0], int_bounds[:,1])
+    #interleaved_bounds = interleave(int_bounds[:,0], int_bounds[:,1])
+    interleaved_x = interleave1(int_bounds[0])
+    interleaved_y = interleave1(int_bounds[1])
     #print("int bounds", int_bounds)
     #print("interleaved_bounds:", interleaved_bounds)
     #print("points list", points_list[-10:])
 
-    left_index = np.searchsorted(points_list, interleaved_bounds[0])
-    right_index = np.searchsorted(points_list, interleaved_bounds[1])
+    left_index = np.searchsorted(points_list, interleaved_x)
+    right_index = np.searchsorted(points_list, interleaved_y)
 
-    if right_index < len(points_list) and points_list[right_index] == interleaved_bounds[1]:
+    if right_index < len(points_list) and points_list[right_index] == interleaved_y:
         right_index += 1
     #print("left_index:", left_index, "right_index", right_index, "zoom:", zoom)
 
     return left_index, right_index
-
+    
+@nb.njit
 def get_points(points_list, rect, bounds, zoom=32):
     '''
     Get all the points in the tile that intersect the rectangle
@@ -334,7 +341,6 @@ def get_points(points_list, rect, bounds, zoom=32):
     tile: [float, float, float, float]
         minx, miny, maxx, maxy
     '''
-    points = []
     #print("tile:", tile)
     tiles_checked = 0
 
@@ -344,25 +350,37 @@ def get_points(points_list, rect, bounds, zoom=32):
     #print("tile_width", tile_width)
 
     tile_bounds = bounds.reshape((-1,2))
-    tile_int_bounds = ((tile_bounds - bounds[0]) // tile_width).astype(np.uint64).reshape((-1,2))
+    tile_int_bounds = ((tile_bounds - bounds[0]) // tile_width).astype(np.uint64).reshape((-1,))
 
     rect_bounds = rect.reshape((-1,2))
     rect_int_bounds = ((rect_bounds - bounds[0]) // tile_width).astype(np.uint64).reshape((-1,))
 
-    tiles_to_check = [tile_int_bounds.reshape((-1,))]
+    #print("tile_int_bounds:", tile_int_bounds)
+    indeces = [0]
+    tiles_to_check = [0,0,0,0]
+    tiles_to_check += [tile_int_bounds[0], 
+            tile_int_bounds[1], 
+            tile_int_bounds[2], 
+            tile_int_bounds[3]]
 
     #print("tiles_to_check:", tiles_to_check, "rect_bounds:", rect_int_bounds)
 
-    indeces = []
     m1 = np.array([0,0,-1,-1])
     not_visited = 0
 
-    
-    while len(tiles_to_check) > 0:
-        tile = tiles_to_check.pop()
-        # print("tile:", tile)
+    while len(tiles_to_check) > 1:
+        y1 = tiles_to_check.pop()
+        x1 = tiles_to_check.pop()
+        y0 = tiles_to_check.pop()
+        x0 = tiles_to_check.pop()
         
-        for child in tile_children(*tile).reshape((4,-1)):
+#        print("len(tiles_to_check)", len(tiles_to_check))
+        
+        children = tile_children(x0, y0, x1, y1).reshape((4, -1))
+        #print("children:", children)
+        for i in range(len(children)):
+            child = children[i]
+        
             tiles_checked += 1
             if not some_in(child, rect_int_bounds):
                 # print("continuing", child)
@@ -386,13 +404,16 @@ def get_points(points_list, rect, bounds, zoom=32):
 
             if all_in(child, rect_int_bounds):
                 #print("all points", child, "indeces", left_index, right_index)
-                indeces += [[left_index, right_index]]
+                indeces += [left_index, right_index]
                 #points += list(points_list[left_index:right_index])
                 continue
 
             #print("adding:", child, rect)
             if child[3] - child[1] > 1 and child[2] - child[0] > 1:
-                tiles_to_check += [child]
+                tiles_to_check += [child[0]]
+                tiles_to_check += [child[1]]
+                tiles_to_check += [child[2]]
+                tiles_to_check += [child[3]]
             #points += get_points(points_list, rect, child, bounding_tile) 
 
         '''
@@ -400,7 +421,7 @@ def get_points(points_list, rect, bounds, zoom=32):
             print("len", len(tiles_to_check), base64.b64encode(tile), base64.b64encode(rect), tile[0].hex()) #, rect)
         '''
     
-    print("tiles_checked:", tiles_checked, not_visited)
+    #print("tiles_checked:", tiles_checked, not_visited)
     return indeces
 
 
