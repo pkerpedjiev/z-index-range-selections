@@ -328,6 +328,61 @@ def all_point_boundaries(points_list, int_bounds):
     #print("left_index:", left_index, "right_index", right_index, "zoom:", zoom)
 
     return left_index, right_index
+
+@nb.jit
+def nearest_neighbor(point, points_list, bounds, zoom=32):
+    '''
+    Calculate the neares neighbor of point from one of the points_list.
+
+    Point has to be within bounds.
+
+    Parameters
+    ----------
+    points: [x,y]
+        A point in x,y space
+    points_list [[x,y],...]
+        A set of points bounded by *bounds*
+    bounds: [[x0,y0], [x1,y1]]
+        The bounding box of the region to be searched
+    zoom: int
+        The resolution of the grid to be searched (2**zoom)
+
+    Returns
+    -------
+    nearest_neighbor: [x,y]
+        The closest point from points_list. None if points_list is empty
+    '''
+    if len(points_list) == 0:
+        return None
+
+    if point[0] < bounds[0] or point[1] < bounds[1]:
+        # point is outside the bounds of this area
+        return None 
+
+    if point[0] > bounds[2] or point[1] > bounds[3]:
+        # point is outside the bounds of this area
+        return None
+
+    tile_width = (bounds[2] - bounds[0]) / 2 ** zoom
+    tile_height = (bounds[3] - bounds[1]) / 2 ** zoom
+
+    rect_width = min(tile_width, tile_height)
+    # print('rect_width', rect_width)
+
+
+    points = []
+
+    while len(points) < 2:
+        query_bounds = [point[0] - rect_width, point[1] - rect_width, point[0] + rect_width, point[1] + rect_width]
+        #print("bounds:", query_bounds)
+
+        points = get_points(points_list, np.array(query_bounds), np.array(bounds), zoom)
+
+        rect_width *= 2
+        #print("points:", points)
+
+    return points
+
     
 @nb.njit
 def get_points(points_list, rect, bounds, zoom=32):
@@ -355,8 +410,10 @@ def get_points(points_list, rect, bounds, zoom=32):
     rect_bounds = rect.reshape((-1,2))
     rect_int_bounds = ((rect_bounds - bounds[0]) // tile_width).astype(np.uint64).reshape((-1,))
 
-    #print("tile_int_bounds:", tile_int_bounds)
+    # indeces has a zero in front so that numba can guess its type
+    # it will be removed in the return statement
     indeces = [0]
+
     tiles_to_check = [0,0,0,0]
     tiles_to_check += [tile_int_bounds[0], 
             tile_int_bounds[1], 
@@ -422,7 +479,7 @@ def get_points(points_list, rect, bounds, zoom=32):
         '''
     
     #print("tiles_checked:", tiles_checked, not_visited)
-    return indeces
+    return indeces[1:]
 
 
 @nb.jit(nopython=True)
