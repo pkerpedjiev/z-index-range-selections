@@ -3,6 +3,21 @@ import numba as nb
 import numpy as np
 import functools as ft
 
+def sort_points(points, bounds, zoom):
+    tile_width = (bounds[2] - bounds[0]) / 2 ** zoom
+    # tile_height = (bounds[3] - bounds[1]) / 2 ** zoom
+
+    #print("tile_width:", tile_width, bounds[2] - bounds[0])
+
+    float_points = (points - bounds[0]) // tile_width
+    int_points = float_points.astype(np.uint64)
+
+    interleaved = interleave(int_points[:,0], int_points[:,1])
+    sort_order = np.argsort(interleaved)
+    sorted_interleaved = np.sort(interleaved)
+
+    return points[sort_order], sorted_interleaved, sort_order
+
 """
 @nb.njit()
 def __part1by1(n):
