@@ -47,7 +47,10 @@ def interleave(x,y,out):
 
 @nb.njit()
 def interleave1(x):
-    return nb.uint64(__part1by1(np.uint64(x[0])) | (__part1by1(nb.uint64(x[1])) << 1))
+    a = __part1by1(np.uint64(x[0]))
+    b = (__part1by1(nb.uint64(x[1])) << 1)
+    print("a:", a, "b", b, "x", x)
+    return nb.uint64(a | b)
 
 @nb.njit()
 def less_than(xa, ya, xb, yb):
