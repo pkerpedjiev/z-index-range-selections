@@ -49,7 +49,6 @@ def interleave(x,y,out):
 def interleave1(x):
     a = __part1by1(np.uint64(x[0]))
     b = (__part1by1(nb.uint64(x[1])) << 1)
-    print("a:", a, "b", b, "x", x)
     return nb.uint64(a | b)
 
 @nb.njit()
@@ -359,7 +358,7 @@ def nearest_neighbor(point, points_list, bounds, zoom=32):
     points: [x,y]
         A point in x,y space
     points_list [[x,y],...]
-        A set of points bounded by *bounds*
+        A set of z-index sorted set of points bounded by *bounds*
     bounds: [[x0,y0], [x1,y1]]
         The bounding box of the region to be searched
     zoom: int
