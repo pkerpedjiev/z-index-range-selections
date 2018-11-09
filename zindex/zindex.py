@@ -64,9 +64,7 @@ def less_than(xa, ya, xb, yb):
         Point
     b: (float, float)
         Point
-    '''
-    #print("less_than")
-        
+    '''        
     ret = 1
     
     if xa == xb and ya == yb:
@@ -349,7 +347,7 @@ def all_point_boundaries(points_list, int_bounds):
 @nb.jit
 def nearest_neighbor(point, points_list, bounds, zoom=32):
     '''
-    Calculate the neares neighbor of point from one of the points_list.
+    Calculate the nearest neighbor of point from one of the points_list.
 
     Point has to be within bounds.
 
@@ -396,7 +394,6 @@ def nearest_neighbor(point, points_list, bounds, zoom=32):
         points = get_points(points_list, np.array(query_bounds), np.array(bounds), zoom)
 
         rect_width *= 2
-        #print("points:", points)
 
     return points
 
@@ -404,22 +401,30 @@ def nearest_neighbor(point, points_list, bounds, zoom=32):
 @nb.njit
 def get_points(points_list, rect, bounds, zoom=32):
     '''
-    Get all the points in the tile that intersect the rectangle
+    Get all the points in the given rectangle.
     
     Parameters
     ----------
+    points_list: np.array([uint64, ...])
+        An array of z-indexed points
     rect: [float, float, float, float]
         minx, miny, maxx, maxy
     tile: [float, float, float, float]
         minx, miny, maxx, maxy
+    bounds: [minx, miny, maxx, maxy]
+        The boundary of the z-indexed region.
+
+    Returns
+    -------
+    indeces: [int, int, ...]
+        The indeces into points_list containing the points that
+        are present in the rectangle.
     '''
     #print("tile:", tile)
     tiles_checked = 0
 
     tile_width = (bounds[2] - bounds[0]) / 2 ** zoom
     tile_height = (bounds[3] - bounds[1]) / 2 ** zoom
-
-    #print("tile_width", tile_width)
 
     tile_bounds = bounds.reshape((-1,2))
     tile_int_bounds = ((tile_bounds - bounds[0]) // tile_width).astype(np.uint64).reshape((-1,))
@@ -437,8 +442,6 @@ def get_points(points_list, rect, bounds, zoom=32):
             tile_int_bounds[2], 
             tile_int_bounds[3]]
 
-    #print("tiles_to_check:", tiles_to_check, "rect_bounds:", rect_int_bounds)
-
     m1 = np.array([0,0,-1,-1])
     not_visited = 0
 
@@ -448,169 +451,33 @@ def get_points(points_list, rect, bounds, zoom=32):
         y0 = tiles_to_check.pop()
         x0 = tiles_to_check.pop()
         
-#        print("len(tiles_to_check)", len(tiles_to_check))
-        
         children = tile_children(x0, y0, x1, y1).reshape((4, -1))
-        #print("children:", children)
         for i in range(len(children)):
             child = children[i]
         
             tiles_checked += 1
             if not some_in(child, rect_int_bounds):
-                # print("continuing", child)
-                # no intersection
                 continue
 
-            #print("child:", child, (child+m1).astype(np.uint64).reshape((-1,2)))
             left_index, right_index = all_point_boundaries(
                 points_list, (child+m1).astype(np.uint64).reshape((-1,2)))
 
-            #print("left_index:", left_index, "right_index:", right_index)
-
             if left_index == right_index:
                 not_visited += 1
-                #print("same index")
                 continue
-
-            #print("li:", left_index, "ri", right_index)
-            #print("child", child, [c * tile_width for c in child], left_index, right_index, len(tiles_to_check))
-            #print("child", child)
 
             if all_in(child, rect_int_bounds):
-                #print("all points", child, "indeces", left_index, right_index)
                 indeces += [left_index, right_index]
-                #points += list(points_list[left_index:right_index])
                 continue
 
-            #print("adding:", child, rect)
             if child[3] - child[1] > 1 and child[2] - child[0] > 1:
                 tiles_to_check += [child[0]]
                 tiles_to_check += [child[1]]
                 tiles_to_check += [child[2]]
                 tiles_to_check += [child[3]]
-            #points += get_points(points_list, rect, child, bounding_tile) 
 
-        '''
-        if len(tiles_to_check) > 100:
-            print("len", len(tiles_to_check), base64.b64encode(tile), base64.b64encode(rect), tile[0].hex()) #, rect)
-        '''
     
-    #print("tiles_checked:", tiles_checked, not_visited)
     return indeces[1:]
-
-
-@nb.jit(nopython=True)
-def ix(i,j):
-    return i
-
-@nb.njit(fastmath=True)
-def quicksort_zindex(a, s, e, x0, y0, x1, y1):
-    '''
-    # From here: https://github.com/lprakash/Sorting-Algorithms/blob/master/sorts.ipynb
-    '''
-    #print(a, s, e)
-    #print(a.__repr__)
-    # stack = []    
-    pivot_a = a[2*(e-1)]
-    pivot_b = a[2*(e-1) + 1]
-
-    p1 = s
-    p2 = e - 1
-
-    while (p1 != p2):
-        tp2 = 2*p2
-        tp1 = 2*p1
-
-        comp = zindex_compare(a[tp1], a[tp1+1] , pivot_a, pivot_b, x0, y0, x1, y1)
-        comp = a[tp1] < a[tp2]
-        # print("comp", comp)
-        #print("y", 2*(p2-1)+1)
-        if comp > 0:
-            #x = ix(p2, 0)
-            #a[ix(p2, 0)] = a[ix(p1,0)]
-            
-            a[tp2] = a[tp1]
-            a[tp2 + 1] = a[tp1+1]
-
-            a[tp1+0] = a[tp2-2]
-            a[tp1+1] = a[tp2-1]
-
-            a[tp2-2] = pivot_a
-            a[tp2-1] = pivot_b
-            
-            p2 = p2 -1
-        else: 
-            p1+=1
-        
-
-    if p2-s > 0:
-        quicksort_zindex(a, s, p2, x0, y0, x1, y1)
-    if e-(p2+1) > 0:
-        quicksort_zindex(a, p2+1, e, x0, y0, x1, y1)
-
-    return a
-
-@nb.jit(nopython=True)
-def quicksort_zindex1(a, s, e, x0, y0, x1, y1):
-    '''
-    # From here: https://github.com/lprakash/Sorting-Algorithms/blob/master/sorts.ipynb
-    '''
-    #print(a, s, e)
-    #print(a.__repr__)
-    # stack = []
-
-    if (e-s)==0:
-        return 
-
-    pivot_a = a[e-1,0]
-    pivot_b = a[e-1,1]
-
-    p1 = s
-    p2 = e - 1
-    while (p1 != p2):
-        comp = zindex_compare(a[p1], [pivot_a, pivot_b], x0, y0, x1, y1)
-
-        if comp > 0:
-            a[p2,0] = a[p1,0]
-            a[p2,1] = a[p1,1]
-            a[p1,0] = a[p2-1,0]
-            a[p1,1] = a[p2-1,1]
-            a[p2-1,0] = pivot_a
-            a[p2-1,1] = pivot_b
-            p2 = p2 -1
-        else: 
-            p1+=1
-
-    quicksort_zindex(a, s, p2, x0, y0, x1, y1)
-    quicksort_zindex(a, p2+1, e, x0, y0, x1, y1)
-
-    return a
-
-def quicksort(a, s, e):
-    #print(a, s, e)
-    #print(a.__repr__)
-    if (e-s)==0:
-        return 
-    pivot = a[e-1]
-    print("pivot:", pivot)
-    p1 = s
-    p2 = e - 1
-    while (p1 != p2):
-        if (a[p1] > pivot):
-            print('setting {} to {} and {} to {} and {} to pivot ({})'.format(p2, p1, p1, p2-1, p2-1, e-1, pivot) )
-            print("pre:", a)
-            a[p2] = a[p1]
-            print("pivot:", pivot)
-            a[p1] = a[p2-1]
-            print("pivot:", pivot)
-            a[p2-1] = pivot
-            print("post:", a)
-            print("--------------")
-            p2 = p2 -1
-        else: 
-            p1+=1
-    quicksort(a, s, p2)
-    quicksort(a, p2+1, e)
 
 def zindex_sort(points, bounds):
     '''
@@ -628,5 +495,51 @@ def zindex_sort(points, bounds):
                                    *bounds).reshape((-1,2))
 
 
+def interpolate(sorted_interleaved, region_bounds, 
+                  global_bounds, width, height=None, zoom=32):
+    '''
+    Create a grid and calculate which interleaved values the grid
+    points are closest to.
 
+    Parameters
+    ----------
+    region_bounds: [xmin, ymin, xmax, ymax]
+        The boundaries of the region we're generating the grid for.
+    global_bounds: [xmin, ymin, xmax, ymax]
+        The boundary of the region that is being z-indexed
+    width: int
+        The width of the grid
+    height: int
+        The height of the grid
+
+    Returns
+    -------
+    (indeces, positions): ([int, int...], [[x0,y0],[x1,y1],...])
+        The indeces into the interleaved array which correspond to the
+        nearest z-indexed points as well as the grid points themselves
+    '''
+    if height is None:
+        height = width
+
+    tile_width = (global_bounds[2] - global_bounds[0]) / 2 ** zoom
+
+    xmin = region_bounds[0]
+    xmax = region_bounds[2]
+    ymin = region_bounds[1]
+    ymax = region_bounds[3]
+    
+    X, Y = np.mgrid[xmin:xmax:complex(0,width), 
+                    ymax:ymin:complex(0,-height)]
+    
+    positions = np.vstack([X.ravel(), Y.ravel()]).T
+    int_points = ((positions - global_bounds[0]) // tile_width).astype(np.uint64)
+    x = interleave(int_points[:,0][:], int_points[:,1][:])  
+
+    # print(positions[:10])
+
+    indeces = np.searchsorted(sorted_interleaved, x)
+    # points = ordered_points[indeces[indeces < len(ordered_points)]]
+    # fpositions = positions[indeces < len(ordered_points)]
+    
+    return (indeces, positions)
 

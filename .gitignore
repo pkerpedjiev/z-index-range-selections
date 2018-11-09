@@ -2,3 +2,6 @@
 *.un~
 *.swp
 *.swo
+data/
+zindex.egg-info
+zindex/__pycache__
