@@ -5,3 +5,4 @@
 data/
 zindex.egg-info
 zindex/__pycache__
+dist
